@@ -23,12 +23,32 @@ free(root);
 ```c
 #define CLAY_IMPLEMENTATION
 #include "clay.h"
+```
 
-Clay_BeginLayout(layoutDimensions);
-CLAY({ .id = CLAY_ID("Root"), .layout = { .sizing = { .width = CLAY_SIZING_GROW(), .height = CLAY_SIZING_GROW() } } }) {
-    CLAY_TEXT(CLAY_STRING("Hello"), CLAY_TEXT_CONFIG({ .textColor = { 255, 255, 255, 255 } }));
-}
-Clay_EndLayout();
+### stb_ds.h
+
+[stb_ds](https://github.com/nothings/stb/blob/master/stb_ds.h) by Sean Barrett — dynamic arrays and hash tables for C.
+
+```c
+#define STB_DS_IMPLEMENTATION
+#include "stb_ds.h"
+
+int *items = NULL;
+arrpush(items, 42);
+arrfree(items);
+```
+
+### http.h
+
+[http.h](https://github.com/mattiasgustavsson/libs/blob/master/http.h) by Mattias Gustavsson — basic HTTP GET/POST over sockets (no HTTPS).
+
+```c
+#define HTTP_IMPLEMENTATION
+#include "http.h"
+
+http_t *req = http_get("http://example.com/", NULL);
+while (http_process(req) == HTTP_STATUS_PENDING) { }
+http_release(req);
 ```
 
 ## Usage
@@ -55,3 +75,5 @@ vendor/stb_me/json.h:
 |------|---------|
 | `json.h` | Public domain (Unlicense), from upstream |
 | `clay.h` | zlib, Copyright (c) Nic Barker |
+| `stb_ds.h` | Public domain, Sean Barrett |
+| `http.h` | Public domain, Mattias Gustavsson |
