@@ -1,5 +1,5 @@
 /*
- * json.h — stb_me
+ * json.h — stb
  * Based on json.h by Neil Henning — https://github.com/sheredom/json.h
  *
  * stb-style usage:

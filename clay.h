@@ -1,5 +1,5 @@
 // VERSION: 0.14
-// clay.h — stb_me
+// clay.h — stb
 // From Clay by Nic Barker — https://github.com/nicbarker/clay
 
 /*

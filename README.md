@@ -1,4 +1,4 @@
-# stb_me
+# stb
 
 Single-header, stb-style C libraries — drop in a `.h`, define `*_IMPLEMENTATION` in one `.c` file, done.
 
@@ -77,17 +77,17 @@ mco_destroy(co);
 Add this repo to your include path and include headers directly:
 
 ```makefile
-CFLAGS += -Ivendor/stb_me
+CFLAGS += -Ivendor/stb
 ```
 
 Or fetch headers at build time:
 
 ```makefile
-STB_ME = https://raw.githubusercontent.com/nhlmg93/stb_me/master
+STB = https://raw.githubusercontent.com/nhlmg93/stb/master
 
-vendor/stb_me/json.h:
-	mkdir -p vendor/stb_me
-	curl -fsSL $(STB_ME)/json.h -o $@
+vendor/stb/json.h:
+	mkdir -p vendor/stb
+	curl -fsSL $(STB)/json.h -o $@
 ```
 
 ## License

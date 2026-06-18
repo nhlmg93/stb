@@ -1,5 +1,5 @@
 /* stb_ds.h - v0.67 - public domain data structures - Sean Barrett 2019
-   stb_me — https://github.com/nothings/stb
+   stb — https://github.com/nothings/stb
 
    This is a single-header-file library that provides easy-to-use
    dynamic arrays and hash tables for C (also works in C++).

@@ -3,7 +3,7 @@
           Licensing information can be found at the end of the file.
 ------------------------------------------------------------------------------
 
-http.h — stb_me
+http.h — stb
 From http.h by Mattias Gustavsson — https://github.com/mattiasgustavsson/libs
 
 http.hpp - v1.0 - Basic HTTP protocol implementation over sockets (no https).

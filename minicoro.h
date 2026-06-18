@@ -1,6 +1,6 @@
 /*
 Minimal asymmetric stackful cross-platform coroutine library in pure C.
-minicoro — stb_me
+minicoro — stb
 From minicoro by Eduardo Bart — https://github.com/edubart/minicoro
 minicoro - v0.2.0 - 15/Nov/2023
 
