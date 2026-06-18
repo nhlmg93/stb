@@ -4,3 +4,9 @@
 *.dylib
 *.exe
 *.out
+examples/http_smoke
+examples/http_test
+examples/test_smoke
+examples/web_smoke
+examples/web_smoke_insecure
+examples/clay_term_demo
