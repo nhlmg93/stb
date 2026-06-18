@@ -1,722 +1,803 @@
 /*
-------------------------------------------------------------------------------
-          Licensing information can be found at the end of the file.
-------------------------------------------------------------------------------
+ * http.h — stb
+ *
+ * Poll-based HTTP/HTTPS client with streaming body and SSE support.
+ * Extends the socket/poll model from http.h by Mattias Gustavsson —
+ * https://github.com/mattiasgustavsson/libs (not a dependency; code ported here).
+ *
+ *   #define HTTP_IMPLEMENTATION
+ *   #include "http.h"
+ *
+ * HTTPS (when HTTP_HTTPS is 1) uses OpenSSL/libssl on the system — link -lssl -lcrypto.
+ *
+ * Arena alloc — pass your arena as memctx to http_get/http_post:
+ *
+ *   #define HTTP_MALLOC(ctx, n) my_arena_alloc(ctx, n)
+ *   #define HTTP_FREE(ctx, p)   ((void)0)
+ *   #define HTTP_IMPLEMENTATION
+ *   #include "http.h"
+ *
+ * HTTP-only build: #define HTTP_HTTPS 0 before include.
+ */
 
-http.h — stb
-From http.h by Mattias Gustavsson — https://github.com/mattiasgustavsson/libs
+#ifndef HTTP_H
+#define HTTP_H
 
-http.hpp - v1.0 - Basic HTTP protocol implementation over sockets (no https).
+#include <stddef.h>
+#include <stdint.h>
 
-Do this:
-    #define HTTP_IMPLEMENTATION
-before you include this file in *one* C/C++ file to create the implementation.
-*/
-
-#ifndef http_hpp
-#define http_hpp
-
-#define _CRT_NONSTDC_NO_DEPRECATE 
-#define _CRT_SECURE_NO_WARNINGS
-#include <stddef.h> // for size_t
-#include <stdint.h> // for uintptr_t
-
-typedef enum http_status_t
-    {
+typedef enum http_status_t {
     HTTP_STATUS_PENDING,
     HTTP_STATUS_COMPLETED,
-    HTTP_STATUS_FAILED,
-    } http_status_t;
+    HTTP_STATUS_FAILED
+} http_status_t;
 
-typedef struct http_t
-    {
+typedef struct http_sse_event {
+    const char *data;
+    size_t data_len;
+    const char *event;
+    size_t event_len;
+} http_sse_event_t;
+
+typedef void (*http_chunk_fn)(void *ctx, const char *data, size_t len);
+typedef void (*http_sse_fn)(void *ctx, const http_sse_event_t *ev);
+
+typedef struct http_t {
     http_status_t status;
     int status_code;
-    char const* reason_phrase;
-    char const* content_type;
+    char const *reason_phrase;
+    char const *content_type;
     size_t response_size;
-    void* response_data;
-    } http_t;
+    void *response_data;
+} http_t;
 
-http_t* http_get( char const* url, void* memctx );
-http_t* http_post( char const* url, void const* data, size_t size, void* memctx );
+http_t *http_get(const char *url, void *memctx);
+http_t *http_post(const char *url, const void *body, size_t body_len, void *memctx);
+void http_header(http_t *w, const char *name, const char *value);
+void http_sse(http_t *w, int enable);
+void http_on_chunk(http_t *w, http_chunk_fn fn, void *ctx);
+void http_on_sse(http_t *w, http_sse_fn fn, void *ctx);
+http_status_t http_process(http_t *w);
+void http_release(http_t *w);
 
-http_status_t http_process( http_t* http );
-
-void http_release( http_t* http );
-
-#endif /* http_hpp */
-
-/** 
-
-http.hpp
-========
-
-Basic HTTP protocol implementation over sockets (no https).
-
-
-Example
--------
-
-    #define HTTP_IMPLEMENTATION
-    #include "http.h"
-
-    int main( int argc, char** argv ) {
-        http_t* request = http_get( "http://www.mattiasgustavsson.com/http_test.txt", NULL );
-        if( !request ) {
-            printf( "Invalid request.\n" );
-            return 1;
-        }
-
-        http_status_t status = HTTP_STATUS_PENDING;
-        int prev_size = -1;
-        while( status == HTTP_STATUS_PENDING ) {
-            status = http_process( request );
-            if( prev_size != (int) request->response_size ) {
-                printf( "%d byte(s) received.\n", (int) request->response_size );
-                prev_size = (int) request->response_size;
-            }
-        }
-
-        if( status == HTTP_STATUS_FAILED ) {
-            printf( "HTTP request failed (%d): %s.\n", request->status_code, request->reason_phrase );
-            http_release( request );
-            return 1;
-        }
-    
-        printf( "\nContent type: %s\n\n%s\n", request->content_type, (char const*)request->response_data );
-        http_release( request );
-        return 0;
-    }
-
-
-API Documentation
------------------
-
-http.h is a small library for making http requests from a web server. It only supports GET and POST http commands, and
-is designed for when you just need a very basic way of communicating over http. http.h does not support https 
-connections, just plain http.
-
-http.h is a single-header library, and does not need any .lib files or other binaries, or any build scripts. To use 
-it, you just include http.h to get the API declarations. To get the definitions, you must include http.h from 
-*one* single C or C++ file, and #define the symbol `HTTP_IMPLEMENTATION` before you do. 
-
-
-#### Custom memory allocators
-
-For working memory and to store the retrieved data, http.h needs to do dynamic allocation by calling `malloc`. Programs 
-might want to keep track of allocations done, or use custom defined pools to allocate memory from. http.h allows 
-for specifying custom memory allocation functions for `malloc` and `free`. This is done with the following code:
-
-    #define HTTP_IMPLEMENTATION
-    #define HTTP_MALLOC( ctx, size ) ( my_custom_malloc( ctx, size ) )
-    #define HTTP_FREE( ctx, ptr ) ( my_custom_free( ctx, ptr ) )
-    #include "http.h"
-
-where `my_custom_malloc` and `my_custom_free` are your own memory allocation/deallocation functions. The `ctx` parameter
-is an optional parameter of type `void*`. When `http_get` or `http_post` is called, , you can pass in a `memctx` 
-parameter, which can be a pointer to anything you like, and which will be passed through as the `ctx` parameter to every 
-`HTTP_MALLOC`/`HTTP_FREE` call. For example, if you are doing memory tracking, you can pass a pointer to your 
-tracking data as `memctx`, and in your custom allocation/deallocation function, you can cast the `ctx` param back to the 
-right type, and access the tracking data.
-
-If no custom allocator is defined, http.h will default to `malloc` and `free` from the C runtime library.
-
-
-http_get
---------
-
-    http_t* http_get( char const* url, void* memctx )
-
-Initiates a http GET request with the specified url. `url` is a zero terminated string containing the request location,
-just like you would type it in a browser, for example `http://www.mattiasgustavsson.com:80/http_test.txt`. `memctx` is a 
-pointer to user defined data which will be passed through to the custom HTTP_MALLOC/HTTP_FREE calls. It can be NULL if 
-no user defined data is needed. Returns a `http_t` instance, which needs to be passed to `http_process` to process the
-request. When the request is finished (or have failed), the returned `http_t` instance needs to be released by calling
-`http_release`. If the request was invalid, `http_get` returns NULL.
-
-
-http_post
----------
-
-    http_t* http_post( char const* url, void const* data, size_t size, void* memctx )
-
-Initiates a http POST request with the specified url. `url` is a zero terminated string containing the request location,
-just like you would type it in a browser, for example `http://www.mattiasgustavsson.com:80/http_test.txt`. `data` is a
-pointer to the data to be sent along as part of the request, and `size` is the number of bytes to send. `memctx` is a 
-pointer to user defined data which will be passed through to the custom HTTP_MALLOC/HTTP_FREE calls. It can be NULL if 
-no user defined data is needed. Returns a `http_t` instance, which needs to be passed to `http_process` to process the
-request. When the request is finished (or have failed), the returned `http_t` instance needs to be released by calling
-`http_release`. If the request was invalid, `http_post` returns NULL.
-
-
-http_process
-------------
-
-    http_status_t http_process( http_t* http )
-
-http.h uses non-blocking sockets, so after a request have been made by calling either `http_get` or `http_post`, you 
-have to keep calling `http_process` for as long as it returns `HTTP_STATUS_PENDING`. You can call it from a loop which 
-does other work too, for example from inside a game loop or from a loop which calls `http_process` on multiple requests.
-If the request fails, `http_process` returns `HTTP_STATUS_FAILED`, and the fields `status_code` and `reason_phrase` may
-contain more details (for example, status code can be 404 if the requested resource was not found on the server). If the 
-request completes successfully, it returns `HTTP_STATUS_COMPLETED`. In this case, the `http_t` instance will contain 
-details about the result. `status_code` and `reason_phrase` contains the details about the result, as specified in the
-HTTP protocol. `content_type` contains the MIME type for the returns resource, for example `text/html` for a normal web
-page. `response_data` is the pointer to the received data, and `resonse_size` is the number of bytes it contains. In the
-case when the response data is in text format, http.h ensures there is a zero terminator placed immediately after the
-response data block, so it is safe to interpret the resonse data as a `char*`. Note that the data size in this case will 
-be the length of the data without the additional zero terminator.
-
-
-http_release
-------------
-
-    void http_release( http_t* http )
-
-Releases the resources acquired by `http_get` or `http_post`. Should be call when you are finished with the request.
-
-*/
-
-/*
-----------------------
-    IMPLEMENTATION
-----------------------
-*/
+#endif /* HTTP_H */
 
 #ifdef HTTP_IMPLEMENTATION
 
-#ifdef _WIN32
-    #define _CRT_NONSTDC_NO_DEPRECATE 
-    #define _CRT_SECURE_NO_WARNINGS
-    #pragma warning( push )
-    #pragma warning( disable: 4127 ) // conditional expression is constant
-    #pragma warning( disable: 4255 ) // 'function' : no function prototype given: converting '()' to '(void)'
-    #pragma warning( disable: 4365 ) // 'action' : conversion from 'type_1' to 'type_2', signed/unsigned mismatch
-    #pragma warning( disable: 4574 ) // 'Identifier' is defined to be '0': did you mean to use '#if identifier'?
-    #pragma warning( disable: 4668 ) // 'symbol' is not defined as a preprocessor macro, replacing with '0' for 'directive'
-    #pragma warning( disable: 4706 ) // assignment within conditional expression
-    #include <winsock2.h>
-    #include <ws2tcpip.h>
-    #pragma warning( pop )
-    #pragma comment (lib, "Ws2_32.lib") 
-    #include <string.h>
-    #include <stdio.h>
-    #define HTTP_SOCKET SOCKET
-    #define HTTP_INVALID_SOCKET INVALID_SOCKET
-#else
-    #include <stdlib.h>
-    #include <stdio.h>
-    #include <string.h>
-    #include <sys/types.h>
-    #include <sys/socket.h>
-    #include <unistd.h>
-    #include <errno.h>
-    #include <fcntl.h>
-    #include <netdb.h>
-    #define HTTP_SOCKET int
-    #define HTTP_INVALID_SOCKET -1
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE
 #endif
 
 #ifndef HTTP_MALLOC
-    #define _CRT_NONSTDC_NO_DEPRECATE 
-    #define _CRT_SECURE_NO_WARNINGS
-    #include <stdlib.h>
-    #define HTTP_MALLOC( ctx, size ) ( malloc( size ) )
-    #define HTTP_FREE( ctx, ptr ) ( free( ptr ) )
+#include <stdlib.h>
+#define HTTP_MALLOC(ctx, size) ((void)(ctx), malloc(size))
+#define HTTP_FREE(ctx, ptr) free(ptr)
 #endif
 
-typedef struct http_internal_t 
-    {
-    /* keep this at the top!*/ 
+#ifndef HTTP_CA_FILE
+#define HTTP_CA_FILE "/etc/ssl/certs/ca-certificates.crt"
+#endif
+
+#ifndef HTTP_TLS_INSECURE
+#define HTTP_TLS_INSECURE 0
+#endif
+
+#ifndef HTTP_HTTPS
+#define HTTP_HTTPS 1
+#endif
+
+#include <stdio.h>
+#include <string.h>
+#include <errno.h>
+
+#ifdef _WIN32
+#define HTTP_SOCKET SOCKET
+#define HTTP_INVALID_SOCKET INVALID_SOCKET
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#pragma comment(lib, "Ws2_32.lib")
+#else
+#define HTTP_SOCKET int
+#define HTTP_INVALID_SOCKET (-1)
+#include <fcntl.h>
+#include <netdb.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#endif
+
+#if HTTP_HTTPS
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#endif
+
+#define HTTP_MAX_HEADERS 32
+#define HTTP_HEADER_NAME 128
+#define HTTP_HEADER_VALUE 1024
+#define HTTP_INITIAL_CAP (64 * 1024)
+
+typedef struct http_header_pair {
+    char name[HTTP_HEADER_NAME];
+    char value[HTTP_HEADER_VALUE];
+} http_header_pair;
+
+typedef struct http_sse_state {
+    char line[4096];
+    size_t line_len;
+    char data[65536];
+    size_t data_len;
+    char event[256];
+    size_t event_len;
+} http_sse_state;
+
+typedef struct http_internal {
     http_t http;
-    /* because http_internal_t* can be cast to http_t*. */
-    
-    void* memctx;
+    void *memctx;
+
     HTTP_SOCKET socket;
+    int https;
     int connect_pending;
     int request_sent;
-    char address[ 256 ];
-    char request_header[ 256 ];
-    char* request_header_large;
-    void* request_data;
-    size_t request_data_size;
-    char reason_phrase[ 1024 ];
-    char content_type[ 256 ];
+    int headers_done;
+
+    char address[256];
+    char port[16];
+    char host_header[256];
+
+    char method[8];
+    char resource[2048];
+
+    char request_buf[8192];
+    size_t request_len;
+    size_t request_sent_bytes;
+
+    const void *post_body;
+    size_t post_body_len;
+    size_t post_body_sent;
+
+    char reason_phrase[1024];
+    char content_type[256];
+
     size_t data_size;
     size_t data_capacity;
-    void* data;
-    } http_internal_t;
+    char *data;
+    size_t hdr_size;
 
+    int chunked;
+    size_t chunk_remaining;
+    size_t content_length;
+    int has_content_length;
 
-static int http_internal_parse_url( char const* url, char* address, size_t address_capacity, char* port, 
-    size_t port_capacity, char const** resource )
-    {
-    // make sure url starts with http://
-    if( strncmp( url, "http://", 7 ) != 0 ) return 0;
-    url += 7; // skip http:// part of url
-    
-    size_t url_len = strlen( url );
+    http_header_pair headers[HTTP_MAX_HEADERS];
+    int header_count;
 
-    // find end of address part of url
-    char const* address_end = strchr( url, ':' );
-    if( !address_end ) address_end = strchr( url, '/' );
-    if( !address_end ) address_end = url + url_len;
+    int sse_mode;
+    http_chunk_fn chunk_fn;
+    void *chunk_ctx;
+    http_sse_fn sse_fn;
+    void *sse_ctx;
+    http_sse_state sse;
 
-    // extract address
-    size_t address_len = (size_t)( address_end - url );
-    if( address_len >= address_capacity ) return 0;
-    memcpy( address, url, address_len );
-    address[ address_len ] = 0;
+#if HTTP_HTTPS
+    SSL *ssl;
+    int tls_ready;
+#endif
+} http_internal;
 
-    // check if there's a port defined
-    char const* port_end = address_end;
-    if( *address_end == ':' )
-        {
-        ++address_end;
-        port_end = strchr( address_end, '/' );
-        if( !port_end ) port_end = address_end + strlen( address_end );
-        size_t port_len = (size_t)( port_end - address_end );
-        if( port_len >= port_capacity ) return 0;
-        memcpy( port, address_end, port_len );
-        port[ port_len ] = 0;
-        }
-    else
-        {
-        // use default port number 80
-        if( port_capacity <= 2 ) return 0;
-        strcpy( port, "80" );
-        }
+#if HTTP_HTTPS
+static SSL_CTX *http_ssl_ctx;
+static int http_ssl_inited;
 
+static int http_ssl_global_init(void) {
+    if (http_ssl_inited) return http_ssl_ctx != NULL;
+    http_ssl_inited = 1;
 
-    *resource = port_end;
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+    SSL_library_init();
+    SSL_load_error_strings();
+    OpenSSL_add_all_algorithms();
+#endif
 
+    http_ssl_ctx = SSL_CTX_new(TLS_client_method());
+    if (!http_ssl_ctx) return 0;
+
+    SSL_CTX_set_min_proto_version(http_ssl_ctx, TLS1_2_VERSION);
+
+#if HTTP_TLS_INSECURE
+    SSL_CTX_set_verify(http_ssl_ctx, SSL_VERIFY_NONE, NULL);
+#else
+    SSL_CTX_set_verify(http_ssl_ctx, SSL_VERIFY_PEER, NULL);
+    if (!SSL_CTX_set_default_verify_paths(http_ssl_ctx)) {
+        SSL_CTX_load_verify_locations(http_ssl_ctx, HTTP_CA_FILE, NULL);
+    }
+#endif
     return 1;
+}
+
+static int http_tls_setup(http_internal *w) {
+    if (!http_ssl_global_init()) return 0;
+    w->ssl = SSL_new(http_ssl_ctx);
+    if (!w->ssl) return 0;
+    SSL_set_fd(w->ssl, (int)w->socket);
+#ifdef SSL_CTRL_SET_TLSEXT_HOSTNAME
+    SSL_set_tlsext_host_name(w->ssl, w->host_header);
+#endif
+    SSL_set_connect_state(w->ssl);
+    return 1;
+}
+
+static int http_tls_handshake(http_internal *w) {
+    int r = SSL_do_handshake(w->ssl);
+    if (r == 1) return 1;
+    {
+        int err = SSL_get_error(w->ssl, r);
+        if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) return 0;
+    }
+    return -1;
+}
+
+static void http_tls_shutdown(http_internal *w) {
+    if (w->ssl) {
+        SSL_shutdown(w->ssl);
+        SSL_free(w->ssl);
+        w->ssl = NULL;
+    }
+}
+#endif /* HTTP_HTTPS */
+
+static int http_parse_url(const char *url, int *https, char *address, size_t acap, char *port, size_t pcap,
+                         const char **resource) {
+    const char *p = url;
+    *https = 0;
+    if (strncmp(p, "https://", 8) == 0) {
+        *https = 1;
+        p += 8;
+    } else if (strncmp(p, "http://", 7) == 0) {
+        p += 7;
+    } else {
+        return 0;
     }
 
+    {
+        const char *end = strchr(p, ':');
+        if (!end) end = strchr(p, '/');
+        if (!end) end = p + strlen(p);
+        size_t n = (size_t)(end - p);
+        if (n >= acap) return 0;
+        memcpy(address, p, n);
+        address[n] = 0;
+        p = end;
+    }
 
-HTTP_SOCKET http_internal_connect( char const* address, char const* port )
-    {   
-    // set up hints for getaddrinfo
-    struct addrinfo hints;
-    memset( &hints, 0, sizeof( hints ) );
-    hints.ai_family = AF_UNSPEC; // the Internet Protocol version 4 (IPv4) address family.
-    hints.ai_flags = AI_PASSIVE;
+    if (*p == ':') {
+        const char *end = strchr(++p, '/');
+        if (!end) end = p + strlen(p);
+        size_t n = (size_t)(end - p);
+        if (n >= pcap) return 0;
+        memcpy(port, p, n);
+        port[n] = 0;
+        p = end;
+    } else {
+        strcpy(port, *https ? "443" : "80");
+    }
+
+    *resource = (*p) ? p : "/";
+    return 1;
+}
+
+static HTTP_SOCKET http_connect(const char *address, const char *port) {
+    struct addrinfo hints, *res = NULL, *it;
+    HTTP_SOCKET sock = HTTP_INVALID_SOCKET;
+
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
-    hints.ai_protocol = IPPROTO_TCP;    // Use Transmission Control Protocol (TCP).
 
-    // resolve the server address and port
-    struct addrinfo* addri = 0;
-    int error = getaddrinfo( address, port, &hints, &addri) ;
-    if( error != 0 ) return HTTP_INVALID_SOCKET;
+    if (getaddrinfo(address, port, &hints, &res) != 0) return HTTP_INVALID_SOCKET;
 
-    // create the socket
-    HTTP_SOCKET sock = socket( addri->ai_family, addri->ai_socktype, addri->ai_protocol );
-    if( sock == -1) 
-        {
-        freeaddrinfo( addri );
-        return HTTP_INVALID_SOCKET;
+    for (it = res; it; it = it->ai_next) {
+        int flags;
+        sock = socket(it->ai_family, it->ai_socktype, it->ai_protocol);
+        if (sock == HTTP_INVALID_SOCKET) continue;
+#ifdef _WIN32
+        u_long nb = 1;
+        ioctlsocket(sock, FIONBIO, &nb);
+#else
+        flags = fcntl(sock, F_GETFL, 0);
+        fcntl(sock, F_SETFL, flags | O_NONBLOCK);
+#endif
+        if (connect(sock, it->ai_addr, (int)it->ai_addrlen) == 0) break;
+#ifdef _WIN32
+        if (WSAGetLastError() != WSAEWOULDBLOCK && WSAGetLastError() != WSAEINPROGRESS) {
+            closesocket(sock);
+            sock = HTTP_INVALID_SOCKET;
+            continue;
         }
-
-    // set socket to nonblocking mode
-    #ifdef _WIN32
-        u_long nonblocking = 1;
-        int res = ioctlsocket( sock, FIONBIO, &nonblocking );
-    #else
-        int flags = fcntl( sock, F_GETFL, 0 );
-        int res = fcntl( sock, F_SETFL, flags | O_NONBLOCK ); 
-    #endif
-    if( res == -1 )
-        {
-        freeaddrinfo( addri );
-        #ifdef _WIN32
-            closesocket( sock );
-        #else
-            close( sock );
-        #endif
-        return HTTP_INVALID_SOCKET;
+#else
+        if (errno != EINPROGRESS && errno != EWOULDBLOCK && errno != EAGAIN) {
+            close(sock);
+            sock = HTTP_INVALID_SOCKET;
+            continue;
         }
-
-    // connect to server
-    if( connect( sock, addri->ai_addr, (int)addri->ai_addrlen ) == -1 )
-        {
-        #ifdef _WIN32
-            if( WSAGetLastError() != WSAEWOULDBLOCK && WSAGetLastError() != WSAEINPROGRESS )
-                {
-                freeaddrinfo( addri );
-                closesocket( sock );
-                return HTTP_INVALID_SOCKET;
-                }
-        #else
-            if( errno != EWOULDBLOCK && errno != EINPROGRESS && errno != EAGAIN )
-                {
-                freeaddrinfo( addri );
-                close( sock );
-                return HTTP_INVALID_SOCKET;
-                }
-        #endif
-        }
-
-    freeaddrinfo( addri );
+#endif
+        break;
+    }
+    freeaddrinfo(res);
     return sock;
+}
+
+static http_internal *http_create(void *memctx) {
+    http_internal *w = (http_internal *)HTTP_MALLOC(memctx, sizeof(http_internal));
+    memset(w, 0, sizeof *w);
+    w->memctx = memctx;
+    w->http.status = HTTP_STATUS_PENDING;
+    w->http.reason_phrase = w->reason_phrase;
+    w->http.content_type = w->content_type;
+    w->socket = HTTP_INVALID_SOCKET;
+    w->connect_pending = 1;
+    w->data_capacity = HTTP_INITIAL_CAP;
+    w->data = (char *)HTTP_MALLOC(memctx, w->data_capacity);
+    return w;
+}
+
+static void http_build_request(http_internal *w, const char *method, const char *resource) {
+    size_t n = 0;
+    int default_port = (strcmp(w->port, w->https ? "443" : "80") == 0);
+
+    n += (size_t)snprintf(w->request_buf + n, sizeof w->request_buf - n, "%s %s HTTP/1.1\r\nHost: %s", method,
+                          resource, w->address);
+    if (!default_port) n += (size_t)snprintf(w->request_buf + n, sizeof w->request_buf - n, ":%s", w->port);
+    n += (size_t)snprintf(w->request_buf + n, sizeof w->request_buf - n, "\r\n");
+
+    if (w->sse_mode) {
+        n += (size_t)snprintf(w->request_buf + n, sizeof w->request_buf - n, "Accept: text/event-stream\r\n");
     }
 
-    
-static http_internal_t* http_internal_create( size_t request_data_size, void* memctx )
     {
-    http_internal_t* internal = (http_internal_t*) HTTP_MALLOC( memctx, sizeof( http_internal_t ) + request_data_size );
-
-    internal->http.status = HTTP_STATUS_PENDING;
-    internal->http.status_code = 0;
-    internal->http.response_size = 0;
-    internal->http.response_data = NULL;
-
-    internal->memctx = memctx;
-    internal->connect_pending = 1;
-    internal->request_sent = 0;
-    
-    strcpy( internal->reason_phrase, "" );
-    internal->http.reason_phrase = internal->reason_phrase;
-
-    strcpy( internal->content_type, "" );
-    internal->http.content_type = internal->content_type;
-
-    internal->data_size = 0;
-    internal->data_capacity = 64 * 1024;
-    internal->data = HTTP_MALLOC( memctx, internal->data_capacity );
-    
-    internal->request_data = NULL;
-    internal->request_data_size = 0;
-    
-    return internal;
+        int i;
+        for (i = 0; i < w->header_count; i++) {
+            n += (size_t)snprintf(w->request_buf + n, sizeof w->request_buf - n, "%s: %s\r\n", w->headers[i].name,
+                                  w->headers[i].value);
+        }
     }
 
-
-http_t* http_get( char const* url, void* memctx )
-    {       
-    #ifdef _WIN32
-        WSADATA wsa_data;
-        if( WSAStartup( MAKEWORD( 1, 0 ), &wsa_data ) != 0 ) return NULL;
-    #endif
-    
-    char address[ 256 ];
-    char port[ 16 ];
-    char const* resource;
-    
-    if( http_internal_parse_url( url, address, sizeof( address ), port, sizeof( port ), &resource ) == 0 )
-        return NULL; 
-
-    HTTP_SOCKET socket = http_internal_connect( address, port );
-    if( socket == HTTP_INVALID_SOCKET ) return NULL;
-    
-    http_internal_t* internal = http_internal_create( 0, memctx );
-    internal->socket = socket;
-
-    char* request_header;   
-    size_t request_header_len = 64 + strlen( resource ) + strlen( address ) + strlen( port );
-    if( request_header_len < sizeof( internal->request_header ) )
-        {
-        internal->request_header_large = NULL;
-        request_header = internal->request_header;
-        }
-    else
-        {
-        internal->request_header_large = (char*) HTTP_MALLOC( memctx, request_header_len + 1 );
-        request_header = internal->request_header_large;
-        }       
-    int default_http_port = (strcmp(port, "80") == 0);
-    sprintf( request_header, "GET %s HTTP/1.0\r\nHost: %s%s%s\r\n\r\n", resource, address, default_http_port ? "" : ":", default_http_port ? "" : port );
-    
-    return &internal->http;
+    if (w->post_body_len > 0) {
+        n += (size_t)snprintf(w->request_buf + n, sizeof w->request_buf - n, "Content-Length: %zu\r\n",
+                              w->post_body_len);
     }
 
+    n += (size_t)snprintf(w->request_buf + n, sizeof w->request_buf - n, "Connection: close\r\n\r\n");
+    w->request_len = n;
+}
 
-http_t* http_post( char const* url, void const* data, size_t size, void* memctx )
-    {
-    #ifdef _WIN32
-        WSADATA wsa_data;
-        if( WSAStartup( MAKEWORD( 1, 0 ), &wsa_data ) != 0 ) return 0;
-    #endif
-    
-    char address[ 256 ];
-    char port[ 16 ];
-    char const* resource;
-    
-    if( http_internal_parse_url( url, address, sizeof( address ), port, sizeof( port ), &resource ) == 0 )
-        return NULL; 
+static int http_grow(http_internal *w, size_t need) {
+    if (w->data_size + need + 1 <= w->data_capacity) return 1;
+    size_t cap = w->data_capacity;
+    while (cap < w->data_size + need + 1) cap *= 2;
+    char *p = (char *)HTTP_MALLOC(w->memctx, cap);
+    if (!p) return 0;
+    memcpy(p, w->data, w->data_size);
+    HTTP_FREE(w->memctx, w->data);
+    w->data = p;
+    w->data_capacity = cap;
+    return 1;
+}
 
-    HTTP_SOCKET socket = http_internal_connect( address, port );
-    if( socket == HTTP_INVALID_SOCKET ) return NULL;
-    
-    http_internal_t* internal = http_internal_create( size, memctx );
-    internal->socket = socket;
-
-    char* request_header;   
-    size_t request_header_len = 64 + strlen( resource ) + strlen( address ) + strlen( port );
-    if( request_header_len < sizeof( internal->request_header ) )
-        {
-        internal->request_header_large = NULL;
-        request_header = internal->request_header;
-        }
-    else
-        {
-        internal->request_header_large = (char*) HTTP_MALLOC( memctx, request_header_len + 1 );
-        request_header = internal->request_header_large;
-        }       
-    int default_http_port = (strcmp(port, "80") == 0);
-    sprintf( request_header, "POST %s HTTP/1.0\r\nHost: %s%s%s\r\nContent-Length: %d\r\n\r\n", resource, address, default_http_port ? "" : ":", default_http_port ? "" : port, 
-        (int) size );
-    
-    internal->request_data_size = size;
-    internal->request_data = ( internal + 1 );
-    memcpy( internal->request_data, data, size );
-    
-    return &internal->http;
-    }
-
-
-http_status_t http_process( http_t* http )
-    {
-    http_internal_t* internal = (http_internal_t*) http;    
-    
-    if( http->status == HTTP_STATUS_FAILED ) return http->status;
-    
-    if( internal->connect_pending )
-        {   
-        fd_set sockets_to_check; 
-        FD_ZERO( &sockets_to_check );
-        #pragma warning( push )
-        #pragma warning( disable: 4548 ) // expression before comma has no effect; expected expression with side-effect
-        FD_SET( internal->socket, &sockets_to_check );
-        #pragma warning( pop )
-        struct timeval timeout; timeout.tv_sec = 0; timeout.tv_usec = 0;
-        // check if socket is ready for send
-        if( select( (int)( internal->socket + 1 ), NULL, &sockets_to_check, NULL, &timeout ) == 1 ) 
-            {
-            int opt = -1;
-            socklen_t len = sizeof( opt ); 
-            if( getsockopt( internal->socket, SOL_SOCKET, SO_ERROR, (char*)( &opt ), &len) >= 0 && opt == 0 ) 
-                internal->connect_pending = 0; // if it is, we're connected
-            }
-        }
-
-    if( internal->connect_pending ) return http->status;
-
-    if( !internal->request_sent )
-        {
-        char const* request_header = internal->request_header_large ? 
-            internal->request_header_large : internal->request_header;
-        if( send( internal->socket, request_header, (int) strlen( request_header ), 0 ) == -1 )
-            {
-            http->status = HTTP_STATUS_FAILED;
-            return http->status;
-            }
-        if( internal->request_data_size )
-            {
-            int res = send( internal->socket, (char const*)internal->request_data, (int) internal->request_data_size, 0 );
-            if( res == -1 )
-                {
-                http->status = HTTP_STATUS_FAILED;
-                return http->status;
-                }
-            }
-        internal->request_sent = 1;
-        return http->status;
-        }
-
-    // check if socket is ready for recv
-    fd_set sockets_to_check; 
-    FD_ZERO( &sockets_to_check );
-    #pragma warning( push )
-    #pragma warning( disable: 4548 ) // expression before comma has no effect; expected expression with side-effect
-    FD_SET( internal->socket, &sockets_to_check );
-    #pragma warning( pop )
-    struct timeval timeout; timeout.tv_sec = 0; timeout.tv_usec = 0;
-    while( select( (int)( internal->socket + 1 ), &sockets_to_check, NULL, NULL, &timeout ) == 1 )
-        {
-        char buffer[ 4096 ];
-        int size = recv( internal->socket, buffer, sizeof( buffer ), 0 );
-        if( size == -1 )
-            {
-            http->status = HTTP_STATUS_FAILED;
-            return http->status;
-            }
-        else if( size > 0 )
-            {
-            size_t min_size = internal->data_size + size + 1;
-            if( internal->data_capacity < min_size )
-                {
-                internal->data_capacity *= 2; 
-                if( internal->data_capacity < min_size ) internal->data_capacity = min_size;
-                void* new_data = HTTP_MALLOC( memctx, internal->data_capacity );
-                memcpy( new_data, internal->data, internal->data_size );
-                HTTP_FREE( memctx, internal->data );
-                internal->data = new_data;
-                }
-            memcpy( (void*)( ( (uintptr_t) internal->data ) + internal->data_size ), buffer, (size_t) size );
-            internal->data_size += size;
-            }
-        else if( size == 0 )
-            {
-            char const* status_line = (char const*) internal->data;
-
-            int header_size = 0;
-            char const* header_end = strstr( status_line, "\r\n\r\n" );
-            if( header_end )
-                {
-                header_end += 4;
-                header_size = (int)( header_end - status_line );
-                }
-            else
-                {
-                http->status = HTTP_STATUS_FAILED;
-                return http->status;
-                }
-
-            // skip http version
-            status_line = strchr( status_line, ' ' );
-            if( !status_line )
-                {
-                http->status = HTTP_STATUS_FAILED;
-                return http->status;
-                }
-            ++status_line;
-            
-            // extract status code
-            char status_code[ 16 ];
-            char const* status_code_end = strchr( status_line, ' ' );
-            if( !status_code_end )
-                {
-                http->status = HTTP_STATUS_FAILED;
-                return http->status;
-                }
-            memcpy( status_code, status_line, (size_t)( status_code_end - status_line ) );
-            status_code[ status_code_end - status_line ] = 0;
-            status_line = status_code_end + 1;
-            http->status_code = atoi( status_code );
-            
-            // extract reason phrase
-            char const* reason_phrase_end = strstr( status_line, "\r\n" );
-            if( !reason_phrase_end )
-                {
-                http->status = HTTP_STATUS_FAILED;
-                return http->status;
-                }
-            size_t reason_phrase_len = (size_t)( reason_phrase_end - status_line );
-            if( reason_phrase_len >= sizeof( internal->reason_phrase ) ) 
-                reason_phrase_len = sizeof( internal->reason_phrase ) - 1;
-            memcpy( internal->reason_phrase, status_line, reason_phrase_len );
-            internal->reason_phrase[ reason_phrase_len ] = 0;
-            status_line = reason_phrase_end + 1;
-            
-            // extract content type
-            char const* content_type_start = strstr( status_line, "Content-Type: " );
-            if( content_type_start )
-                {
-                content_type_start += strlen( "Content-Type: " );
-                char const* content_type_end = strstr( content_type_start, "\r\n" );
-                if( content_type_end )
-                    {
-                    size_t content_type_len = (size_t)( content_type_end - content_type_start );
-                    if( content_type_len >= sizeof( internal->content_type ) ) 
-                        content_type_len = sizeof( internal->content_type ) - 1;
-                    memcpy( internal->content_type, content_type_start, content_type_len );
-                    internal->content_type[ content_type_len ] = 0;
+static void http_dispatch_body(http_internal *w, const char *bytes, size_t len) {
+    if (len == 0) return;
+    if (w->chunk_fn) w->chunk_fn(w->chunk_ctx, bytes, len);
+    if (w->sse_mode && w->sse_fn) {
+        size_t i;
+        for (i = 0; i < len; i++) {
+            char c = bytes[i];
+            http_sse_state *s = &w->sse;
+            if (c == '\n') {
+                s->line[s->line_len] = 0;
+                if (s->line_len == 0) {
+                    if (s->data_len > 0) {
+                        http_sse_event_t ev;
+                        s->data[s->data_len] = 0;
+                        ev.data = s->data;
+                        ev.data_len = s->data_len;
+                        ev.event = s->event_len ? s->event : NULL;
+                        ev.event_len = s->event_len;
+                        if (!(s->data_len == 6 && memcmp(s->data, "[DONE]", 6) == 0)) {
+                            w->sse_fn(w->sse_ctx, &ev);
+                        }
+                        s->data_len = 0;
+                        s->event_len = 0;
                     }
+                } else if (strncmp(s->line, "data:", 5) == 0) {
+                    const char *d = s->line + 5;
+                    if (*d == ' ') d++;
+                    {
+                        size_t dl = strlen(d);
+                        if (s->data_len + dl + 1 < sizeof s->data) {
+                            if (s->data_len) s->data[s->data_len++] = '\n';
+                            memcpy(s->data + s->data_len, d, dl);
+                            s->data_len += dl;
+                        }
+                    }
+                } else if (strncmp(s->line, "event:", 6) == 0) {
+                    const char *e = s->line + 6;
+                    if (*e == ' ') e++;
+                    s->event_len = strlen(e);
+                    if (s->event_len >= sizeof s->event) s->event_len = sizeof s->event - 1;
+                    memcpy(s->event, e, s->event_len);
+                    s->event[s->event_len] = 0;
                 }
-
-            http->status =  http->status_code < 300 ? HTTP_STATUS_COMPLETED : HTTP_STATUS_FAILED;
-            http->response_data = (void*)( ( (uintptr_t) internal->data ) + header_size );
-            http->response_size = internal->data_size - header_size;
-
-            // add an extra zero after the received data, but don't modify the size, so ascii results can be used as
-            // a zero terminated string. the size returned will be the string without this extra zero terminator.
-            ( (char*)http->response_data )[ http->response_size ] = 0;
-            return http->status;
+                s->line_len = 0;
+            } else if (c != '\r') {
+                if (s->line_len + 1 < sizeof s->line) s->line[s->line_len++] = c;
             }
         }
-    
-    return http->status;
     }
+    if (http_grow(w, len)) {
+        memcpy(w->data + w->data_size, bytes, len);
+        w->data_size += len;
+        w->data[w->data_size] = 0;
+    }
+}
 
-
-void http_release( http_t* http )
+static int http_io_read(http_internal *w, char *buf, size_t cap) {
+#if HTTP_HTTPS
+    if (w->https && w->ssl) {
+        int n = SSL_read(w->ssl, buf, (int)cap);
+        if (n > 0) return n;
+        if (n == 0) return -1;
+        {
+            int err = SSL_get_error(w->ssl, n);
+            if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) return 0;
+        }
+        return -1;
+    }
+#endif
     {
-    http_internal_t* internal = (http_internal_t*) http;
-    #ifdef _WIN32
-        closesocket( internal->socket );
-    #else
-        close( internal->socket );
-    #endif
+        int n = (int)recv(w->socket, buf, (int)cap, 0);
+        if (n == 0) return -1;
+        if (n < 0) {
+#ifdef _WIN32
+            if (WSAGetLastError() == WSAEWOULDBLOCK) return 0;
+#else
+            if (errno == EWOULDBLOCK || errno == EAGAIN) return 0;
+#endif
+            return -1;
+        }
+        return n;
+    }
+}
 
-    if( internal->request_header_large) HTTP_FREE( memctx, internal->request_header_large );
-    HTTP_FREE( memctx, internal->data );
-    HTTP_FREE( memctx, internal );
-    #ifdef _WIN32
-        WSACleanup();
-    #endif
+static int http_io_write(http_internal *w, const char *buf, size_t len) {
+#if HTTP_HTTPS
+    if (w->https && w->ssl) {
+        int n = SSL_write(w->ssl, buf, (int)len);
+        if (n > 0) return n;
+        if (n == 0) return 0;
+        {
+            int err = SSL_get_error(w->ssl, n);
+            if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) return 0;
+        }
+        return -1;
+    }
+#endif
+    {
+        int n = (int)send(w->socket, buf, (int)len, 0);
+        if (n < 0) {
+#ifdef _WIN32
+            if (WSAGetLastError() == WSAEWOULDBLOCK) return 0;
+#else
+            if (errno == EWOULDBLOCK || errno == EAGAIN) return 0;
+#endif
+            return -1;
+        }
+        return n;
+    }
+}
+
+static size_t http_header_size(http_internal *w) {
+    char *p = strstr(w->data, "\r\n\r\n");
+    return p ? (size_t)(p - w->data) + 4 : 0;
+}
+
+static void http_parse_headers(http_internal *w) {
+    char *p = w->data;
+    char *end = strstr(p, "\r\n\r\n");
+    char *line;
+    if (!end) return;
+    *end = 0;
+    line = strchr(p, ' ');
+    if (line) {
+        line++;
+        w->http.status_code = atoi(line);
+        line = strchr(line, ' ');
+        if (line) {
+            line++;
+            {
+                char *rp = strchr(line, '\r');
+                if (rp) {
+                    size_t n = (size_t)(rp - line);
+                    if (n >= sizeof w->reason_phrase) n = sizeof w->reason_phrase - 1;
+                    memcpy(w->reason_phrase, line, n);
+                    w->reason_phrase[n] = 0;
+                }
+            }
+        }
+    }
+    for (line = strchr(p, '\n'); line; line = strchr(line + 1, '\n')) {
+        line++;
+        if (strncmp(line, "Content-Type:", 13) == 0) {
+            const char *v = line + 13;
+            if (*v == ' ') v++;
+            {
+                char *e = strchr(v, '\r');
+                size_t n = e ? (size_t)(e - v) : strlen(v);
+                if (n >= sizeof w->content_type) n = sizeof w->content_type - 1;
+                memcpy(w->content_type, v, n);
+                w->content_type[n] = 0;
+            }
+        } else if (strncmp(line, "Transfer-Encoding:", 18) == 0) {
+            if (strstr(line, "chunked")) w->chunked = 1;
+        } else if (strncmp(line, "Content-Length:", 15) == 0) {
+            w->content_length = (size_t)atoll(line + 15);
+            w->has_content_length = 1;
+        }
+    }
+    w->headers_done = 1;
+}
+
+http_t *http_get(const char *url, void *memctx) {
+    http_internal *w = http_create(memctx);
+    const char *resource;
+    if (!http_parse_url(url, &w->https, w->address, sizeof w->address, w->port, sizeof w->port, &resource)) {
+        HTTP_FREE(memctx, w);
+        return NULL;
+    }
+#if HTTP_HTTPS
+    if (w->https && !http_ssl_global_init()) {
+        HTTP_FREE(memctx, w->data);
+        HTTP_FREE(memctx, w);
+        return NULL;
+    }
+#else
+    if (w->https) {
+        HTTP_FREE(memctx, w->data);
+        HTTP_FREE(memctx, w);
+        return NULL;
+    }
+#endif
+    snprintf(w->host_header, sizeof w->host_header, "%s", w->address);
+    w->socket = http_connect(w->address, w->port);
+    if (w->socket == HTTP_INVALID_SOCKET) {
+        HTTP_FREE(memctx, w->data);
+        HTTP_FREE(memctx, w);
+        return NULL;
+    }
+    strcpy(w->method, "GET");
+    snprintf(w->resource, sizeof w->resource, "%s", resource);
+    return &w->http;
+}
+
+http_t *http_post(const char *url, const void *body, size_t body_len, void *memctx) {
+    http_internal *w = http_create(memctx);
+    const char *resource;
+    if (!http_parse_url(url, &w->https, w->address, sizeof w->address, w->port, sizeof w->port, &resource)) {
+        HTTP_FREE(memctx, w);
+        return NULL;
+    }
+#if HTTP_HTTPS
+    if (w->https && !http_ssl_global_init()) {
+        HTTP_FREE(memctx, w->data);
+        HTTP_FREE(memctx, w);
+        return NULL;
+    }
+#else
+    if (w->https) {
+        HTTP_FREE(memctx, w->data);
+        HTTP_FREE(memctx, w);
+        return NULL;
+    }
+#endif
+    snprintf(w->host_header, sizeof w->host_header, "%s", w->address);
+    w->post_body = body;
+    w->post_body_len = body_len;
+    w->socket = http_connect(w->address, w->port);
+    if (w->socket == HTTP_INVALID_SOCKET) {
+        HTTP_FREE(memctx, w->data);
+        HTTP_FREE(memctx, w);
+        return NULL;
+    }
+    strcpy(w->method, "POST");
+    snprintf(w->resource, sizeof w->resource, "%s", resource);
+    return &w->http;
+}
+
+void http_header(http_t *http, const char *name, const char *value) {
+    http_internal *w = (http_internal *)http;
+    if (w->header_count >= HTTP_MAX_HEADERS) return;
+    snprintf(w->headers[w->header_count].name, HTTP_HEADER_NAME, "%s", name);
+    snprintf(w->headers[w->header_count].value, HTTP_HEADER_VALUE, "%s", value);
+    w->header_count++;
+}
+
+void http_sse(http_t *http, int enable) {
+    ((http_internal *)http)->sse_mode = enable ? 1 : 0;
+}
+
+void http_on_chunk(http_t *http, http_chunk_fn fn, void *ctx) {
+    http_internal *w = (http_internal *)http;
+    w->chunk_fn = fn;
+    w->chunk_ctx = ctx;
+}
+
+void http_on_sse(http_t *http, http_sse_fn fn, void *ctx) {
+    http_internal *w = (http_internal *)http;
+    w->sse_fn = fn;
+    w->sse_ctx = ctx;
+}
+
+http_status_t http_process(http_t *http) {
+    http_internal *w = (http_internal *)http;
+    fd_set rfds, wfds;
+    struct timeval tv;
+    char buf[4096];
+    int n;
+
+    if (http->status != HTTP_STATUS_PENDING) return http->status;
+
+    if (w->connect_pending) {
+        FD_ZERO(&rfds);
+        FD_ZERO(&wfds);
+        FD_SET(w->socket, &wfds);
+        tv.tv_sec = 0;
+        tv.tv_usec = 0;
+        if (select(w->socket + 1, NULL, &wfds, NULL, &tv) == 1) {
+            int err = 0;
+            socklen_t el = sizeof err;
+            getsockopt(w->socket, SOL_SOCKET, SO_ERROR, (char *)&err, &el);
+            if (err == 0) w->connect_pending = 0;
+        }
+        if (w->connect_pending) return HTTP_STATUS_PENDING;
     }
 
+#if HTTP_HTTPS
+    if (w->https && !w->tls_ready) {
+        if (!w->ssl) {
+            if (!http_tls_setup(w)) {
+                http->status = HTTP_STATUS_FAILED;
+                return HTTP_STATUS_FAILED;
+            }
+        }
+        n = http_tls_handshake(w);
+        if (n < 0) {
+            http->status = HTTP_STATUS_FAILED;
+            return HTTP_STATUS_FAILED;
+        }
+        if (n == 0) return HTTP_STATUS_PENDING;
+        w->tls_ready = 1;
+    }
+#endif
+
+    if (!w->request_sent) {
+        if (w->request_len == 0) http_build_request(w, w->method, w->resource);
+
+        size_t left = w->request_len - w->request_sent_bytes;
+        if (left > 0) {
+            n = http_io_write(w, w->request_buf + w->request_sent_bytes, left);
+            if (n < 0) {
+                http->status = HTTP_STATUS_FAILED;
+                return HTTP_STATUS_FAILED;
+            }
+            if (n == 0) return HTTP_STATUS_PENDING;
+            w->request_sent_bytes += (size_t)n;
+            if (w->request_sent_bytes < w->request_len) return HTTP_STATUS_PENDING;
+        }
+        if (w->post_body_len > 0) {
+            left = w->post_body_len - w->post_body_sent;
+            n = http_io_write(w, (const char *)w->post_body + w->post_body_sent, left);
+            if (n < 0) {
+                http->status = HTTP_STATUS_FAILED;
+                return HTTP_STATUS_FAILED;
+            }
+            if (n == 0) return HTTP_STATUS_PENDING;
+            w->post_body_sent += (size_t)n;
+            if (w->post_body_sent < w->post_body_len) return HTTP_STATUS_PENDING;
+        }
+        w->request_sent = 1;
+    }
+
+    FD_ZERO(&rfds);
+    FD_ZERO(&wfds);
+    FD_SET(w->socket, &rfds);
+    tv.tv_sec = 0;
+    tv.tv_usec = 0;
+    if (select(w->socket + 1, &rfds, NULL, NULL, &tv) != 1) return HTTP_STATUS_PENDING;
+
+    n = http_io_read(w, buf, sizeof buf);
+    if (n < 0) {
+        if (!w->headers_done) {
+            http->status = HTTP_STATUS_FAILED;
+            return HTTP_STATUS_FAILED;
+        }
+        goto finish;
+    }
+    if (n == 0) {
+        if (!w->request_sent) return HTTP_STATUS_PENDING;
+        goto finish;
+    }
+
+    if (!w->headers_done) {
+        if (!http_grow(w, (size_t)n)) {
+            http->status = HTTP_STATUS_FAILED;
+            return HTTP_STATUS_FAILED;
+        }
+        memcpy(w->data + w->data_size, buf, (size_t)n);
+        w->data_size += (size_t)n;
+        w->data[w->data_size] = 0;
+        if (strstr(w->data, "\r\n\r\n")) {
+            size_t hdr = http_header_size(w);
+            size_t initial_body = 0;
+            http_parse_headers(w);
+            w->hdr_size = hdr;
+            if (w->data_size > hdr) initial_body = w->data_size - hdr;
+            w->data_size = hdr;
+            if (initial_body > 0) http_dispatch_body(w, w->data + hdr, initial_body);
+        }
+        return HTTP_STATUS_PENDING;
+    }
+
+    http_dispatch_body(w, buf, (size_t)n);
+    return HTTP_STATUS_PENDING;
+
+finish:
+    {
+        http->response_data = w->data + w->hdr_size;
+        http->response_size = w->data_size > w->hdr_size ? w->data_size - w->hdr_size : 0;
+        if (http->response_data && http->response_size > 0)
+            ((char *)http->response_data)[http->response_size] = 0;
+    }
+    http->status = (http->status_code > 0 && http->status_code < 400) ? HTTP_STATUS_COMPLETED : HTTP_STATUS_FAILED;
+    return http->status;
+}
+
+void http_release(http_t *http) {
+    http_internal *w = (http_internal *)http;
+#if HTTP_HTTPS
+    http_tls_shutdown(w);
+#endif
+    if (w->socket != HTTP_INVALID_SOCKET) {
+#ifdef _WIN32
+        closesocket(w->socket);
+#else
+        close(w->socket);
+#endif
+    }
+    HTTP_FREE(w->memctx, w->data);
+    HTTP_FREE(w->memctx, w);
+}
 
 #endif /* HTTP_IMPLEMENTATION */
 
 /*
-revision history:
-    1.0     first released version  
-*/
-
-/*
-------------------------------------------------------------------------------
-
-This software is available under 2 licenses - you may choose the one you like.
-
-------------------------------------------------------------------------------
-
-ALTERNATIVE A - MIT License
-
-Copyright (c) 2016 Mattias Gustavsson
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of 
-this software and associated documentation files (the "Software"), to deal in 
-the Software without restriction, including without limitation the rights to 
-use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies 
-of the Software, and to permit persons to whom the Software is furnished to do 
-so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all 
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, 
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE 
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER 
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, 
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE 
-SOFTWARE.
-
-------------------------------------------------------------------------------
-
-ALTERNATIVE B - Public Domain (www.unlicense.org)
-
-This is free and unencumbered software released into the public domain.
-
-Anyone is free to copy, modify, publish, use, compile, sell, or distribute this 
-software, either in source code form or as a compiled binary, for any purpose, 
-commercial or non-commercial, and by any means.
-
-In jurisdictions that recognize copyright laws, the author or authors of this 
-software dedicate any and all copyright interest in the software to the public 
-domain. We make this dedication for the benefit of the public at large and to 
-the detriment of our heirs and successors. We intend this dedication to be an 
-overt act of relinquishment in perpetuity of all present and future rights to 
-this software under copyright law.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, 
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE 
-AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN 
-ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION 
-WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-------------------------------------------------------------------------------
-*/
+ * http.h — MIT License (socket/poll portions derived from http.h by Mattias Gustavsson)
+ *
+ * Copyright (c) Mattias Gustavsson — underlying HTTP client design (http.h)
+ * Copyright (c) 2026 stb contributors — HTTPS glue, SSE, and extensions in this file
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
