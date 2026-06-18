@@ -7,6 +7,13 @@
 examples/http_smoke
 examples/http_test
 examples/test_smoke
+examples/json_test
+examples/stb_ds_test
+examples/minicoro_test
+examples/clay_test
+examples/termbox_test
+examples/clay_term_test
+examples/clay_raylib_test
+examples/clay_raylib_demo
 examples/web_smoke
 examples/web_smoke_insecure
-examples/clay_term_demo

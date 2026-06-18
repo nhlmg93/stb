@@ -1,17 +1,24 @@
-#define _DEFAULT_SOURCE
-#define TEST_IMPLEMENTATION
-#include "../test.h"
+#define MUNIT_IMPLEMENTATION
+#include "../munit.h"
 
-TEST(sanity) {
-    ASSERT(1 + 1 == 2);
-    ASSERT_STR_EQ("hello", "hello");
-    ASSERT_STR_CONTAINS("hello world", "world");
-    return TEST_OK;
+#include <string.h>
+
+static MunitResult test_sanity(const MunitParameter params[], void *user_data) {
+    (void) params;
+    (void) user_data;
+    munit_assert_int(1 + 1, ==, 2);
+    munit_assert_string_equal("hello", "hello");
+    munit_assert_not_null(strstr("hello world", "world"));
+    return MUNIT_OK;
 }
 
-int main(void) {
-    const test_case cases[] = {
-        TEST_ENTRY(sanity),
-    };
-    return test_run(cases, (int)(sizeof cases / sizeof cases[0]));
+static MunitTest tests[] = {
+    { "/sanity", test_sanity, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { NULL, NULL, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+};
+
+static const MunitSuite suite = { (char *)"/", tests, NULL, 1, MUNIT_SUITE_OPTION_NONE };
+
+int main(int argc, char *argv[]) {
+    return munit_suite_main(&suite, NULL, argc, argv);
 }

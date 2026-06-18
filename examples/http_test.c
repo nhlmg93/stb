@@ -1,9 +1,10 @@
+#define MUNIT_NO_FORK
 #define _DEFAULT_SOURCE
 #define HTTP_IMPLEMENTATION
 #include "../http.h"
 
-#define TEST_IMPLEMENTATION
-#include "../test.h"
+#define MUNIT_IMPLEMENTATION
+#include "../munit.h"
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -239,41 +240,56 @@ static void stop_server(void) {
     }
 }
 
-TEST(get_http) {
+static MunitResult test_get_http(const MunitParameter params[], void *user_data) {
     char u[128];
-    http_t *h = http_get(url(u, sizeof u, "/"), NULL);
-    ASSERT_NOT_NULL(h);
+    http_t *h;
+
+    (void) params;
+    (void) user_data;
+
+    h = http_get(url(u, sizeof u, "/"), NULL);
+    munit_assert_not_null(h);
     http_drain(h);
-    ASSERT_EQ(h->status, HTTP_STATUS_COMPLETED);
-    ASSERT_EQ(h->status_code, 200);
-    ASSERT_STR_CONTAINS((const char *)h->response_data, "hello http");
+    munit_assert_int((int)h->status, ==, (int)HTTP_STATUS_COMPLETED);
+    munit_assert_int(h->status_code, ==, 200);
+    munit_assert_not_null(strstr((const char *)h->response_data, "hello http"));
     http_release(h);
-    return TEST_OK;
+    return MUNIT_OK;
 }
 
-TEST(post_http) {
+static MunitResult test_post_http(const MunitParameter params[], void *user_data) {
     char u[128];
     const char *body = "{\"smoke\":true}";
-    http_t *h = http_post(url(u, sizeof u, "/echo"), body, strlen(body), NULL);
-    ASSERT_NOT_NULL(h);
+    http_t *h;
+
+    (void) params;
+    (void) user_data;
+
+    h = http_post(url(u, sizeof u, "/echo"), body, strlen(body), NULL);
+    munit_assert_not_null(h);
     http_header(h, "Content-Type", "application/json");
     http_drain(h);
-    ASSERT_EQ(h->status, HTTP_STATUS_COMPLETED);
-    ASSERT_STR_CONTAINS((const char *)h->response_data, "body={\"smoke\":true}");
+    munit_assert_int((int)h->status, ==, (int)HTTP_STATUS_COMPLETED);
+    munit_assert_not_null(strstr((const char *)h->response_data, "body={\"smoke\":true}"));
     http_release(h);
-    return TEST_OK;
+    return MUNIT_OK;
 }
 
-TEST(custom_header) {
+static MunitResult test_custom_header(const MunitParameter params[], void *user_data) {
     char u[128];
-    http_t *h = http_get(url(u, sizeof u, "/echo"), NULL);
-    ASSERT_NOT_NULL(h);
+    http_t *h;
+
+    (void) params;
+    (void) user_data;
+
+    h = http_get(url(u, sizeof u, "/echo"), NULL);
+    munit_assert_not_null(h);
     http_header(h, "X-Smoke-Test", "1");
     http_drain(h);
-    ASSERT_EQ(h->status, HTTP_STATUS_COMPLETED);
-    ASSERT_STR_CONTAINS((const char *)h->response_data, "header=1");
+    munit_assert_int((int)h->status, ==, (int)HTTP_STATUS_COMPLETED);
+    munit_assert_not_null(strstr((const char *)h->response_data, "header=1"));
     http_release(h);
-    return TEST_OK;
+    return MUNIT_OK;
 }
 
 typedef struct {
@@ -288,19 +304,24 @@ static void on_chunk(void *ctx, const char *data, size_t len) {
     (void)data;
 }
 
-TEST(chunk_callback) {
+static MunitResult test_chunk_callback(const MunitParameter params[], void *user_data) {
     char u[128];
     chunk_ctx ctx = {0, 0};
-    http_t *h = http_get(url(u, sizeof u, "/big"), NULL);
-    ASSERT_NOT_NULL(h);
+    http_t *h;
+
+    (void) params;
+    (void) user_data;
+
+    h = http_get(url(u, sizeof u, "/big"), NULL);
+    munit_assert_not_null(h);
     http_on_chunk(h, on_chunk, &ctx);
     http_drain(h);
-    ASSERT_EQ(h->status, HTTP_STATUS_COMPLETED);
-    ASSERT_EQ(h->response_size, 8192u);
-    ASSERT_EQ(ctx.bytes, 8192u);
-    ASSERT(ctx.chunks > 0);
+    munit_assert_int((int)h->status, ==, (int)HTTP_STATUS_COMPLETED);
+    munit_assert_int((int)h->response_size, ==, 8192);
+    munit_assert_int((int)ctx.bytes, ==, 8192);
+    munit_assert_true(ctx.chunks > 0);
     http_release(h);
-    return TEST_OK;
+    return MUNIT_OK;
 }
 
 static int sse_got_event;
@@ -310,72 +331,96 @@ static void on_sse(void *ctx, const http_sse_event_t *ev) {
     if (ev->data_len > 0) sse_got_event = 1;
 }
 
-TEST(sse_get) {
+static MunitResult test_sse_get(const MunitParameter params[], void *user_data) {
     char u[128];
-    http_t *h = http_get(url(u, sizeof u, "/sse"), NULL);
-    ASSERT_NOT_NULL(h);
+    http_t *h;
+
+    (void) params;
+    (void) user_data;
+
+    h = http_get(url(u, sizeof u, "/sse"), NULL);
+    munit_assert_not_null(h);
     sse_got_event = 0;
     http_sse(h, 1);
     http_on_sse(h, on_sse, NULL);
     while (http_process(h) == HTTP_STATUS_PENDING && !sse_got_event) { }
-    ASSERT(sse_got_event);
+    munit_assert_true(sse_got_event);
     http_release(h);
-    return TEST_OK;
+    return MUNIT_OK;
 }
 
-TEST(sse_post) {
+static MunitResult test_sse_post(const MunitParameter params[], void *user_data) {
     char u[128];
     const char *body = "stream=true";
-    http_t *h = http_post(url(u, sizeof u, "/sse"), body, strlen(body), NULL);
-    ASSERT_NOT_NULL(h);
+    http_t *h;
+
+    (void) params;
+    (void) user_data;
+
+    h = http_post(url(u, sizeof u, "/sse"), body, strlen(body), NULL);
+    munit_assert_not_null(h);
     http_header(h, "Content-Type", "text/plain");
     sse_got_event = 0;
     http_sse(h, 1);
     http_on_sse(h, on_sse, NULL);
     while (http_process(h) == HTTP_STATUS_PENDING && !sse_got_event) { }
-    ASSERT(sse_got_event);
+    munit_assert_true(sse_got_event);
     http_release(h);
-    return TEST_OK;
+    return MUNIT_OK;
 }
 
-TEST(get_https) {
+static MunitResult test_get_https(const MunitParameter params[], void *user_data) {
     http_t *h;
-    SKIP_IF(!getenv("HTTP_TEST_NETWORK"), "set HTTP_TEST_NETWORK=1 for external HTTPS tests");
+
+    (void) params;
+    (void) user_data;
+
+    if (!getenv("HTTP_TEST_NETWORK")) return MUNIT_SKIP;
+
     h = http_get("https://example.com/", NULL);
-    ASSERT_NOT_NULL(h);
+    munit_assert_not_null(h);
     http_drain(h);
-    ASSERT_EQ(h->status, HTTP_STATUS_COMPLETED);
-    ASSERT_EQ(h->status_code, 200);
-    ASSERT(h->response_size > 0);
+    munit_assert_int((int)h->status, ==, (int)HTTP_STATUS_COMPLETED);
+    munit_assert_int(h->status_code, ==, 200);
+    munit_assert_true(h->response_size > 0);
     http_release(h);
-    return TEST_OK;
+    return MUNIT_OK;
 }
 
-TEST(post_https) {
+static MunitResult test_post_https(const MunitParameter params[], void *user_data) {
     const char *body = "{\"smoke\":true}";
     http_t *h;
-    SKIP_IF(!getenv("HTTP_TEST_NETWORK"), "set HTTP_TEST_NETWORK=1 for external HTTPS tests");
+
+    (void) params;
+    (void) user_data;
+
+    if (!getenv("HTTP_TEST_NETWORK")) return MUNIT_SKIP;
+
     h = http_post("https://postman-echo.com/post", body, strlen(body), NULL);
-    ASSERT_NOT_NULL(h);
+    munit_assert_not_null(h);
     http_header(h, "Content-Type", "application/json");
     http_drain(h);
-    ASSERT_EQ(h->status, HTTP_STATUS_COMPLETED);
-    ASSERT(body_contains(h, "\"smoke\":true") || body_contains(h, "\"smoke\": true"));
+    munit_assert_int((int)h->status, ==, (int)HTTP_STATUS_COMPLETED);
+    munit_assert_true(body_contains(h, "\"smoke\":true") || body_contains(h, "\"smoke\": true"));
     http_release(h);
-    return TEST_OK;
+    return MUNIT_OK;
 }
 
-int main(void) {
-    const test_case cases[] = {
-        TEST_ENTRY(get_http),
-        TEST_ENTRY(post_http),
-        TEST_ENTRY(custom_header),
-        TEST_ENTRY(chunk_callback),
-        TEST_ENTRY(sse_get),
-        TEST_ENTRY(sse_post),
-        TEST_ENTRY(get_https),
-        TEST_ENTRY(post_https),
-    };
+static MunitTest tests[] = {
+    { "/get_http", test_get_http, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/post_http", test_post_http, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/custom_header", test_custom_header, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/chunk_callback", test_chunk_callback, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/sse_get", test_sse_get, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/sse_post", test_sse_post, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/get_https", test_get_https, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/post_https", test_post_https, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { NULL, NULL, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+};
+
+static const MunitSuite suite = { (char *)"/http", tests, NULL, 1, MUNIT_SUITE_OPTION_NONE };
+
+int main(int argc, char *argv[]) {
     int rc;
 
     if (start_server() != 0) {
@@ -383,7 +428,7 @@ int main(void) {
         return 1;
     }
 
-    rc = test_run(cases, (int)(sizeof cases / sizeof cases[0]));
+    rc = munit_suite_main(&suite, NULL, argc, argv);
     stop_server();
     return rc;
 }

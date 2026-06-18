@@ -16,6 +16,19 @@ struct json_value_s *root = json_parse(text, size);
 free(root);
 ```
 
+See `examples/json_test.c`.
+
+### clay.h
+
+[Clay](https://github.com/nicbarker/clay) — flexbox-style 2D UI layout in C. Renderer-agnostic; outputs layout primitives for your draw code.
+
+```c
+#define CLAY_IMPLEMENTATION
+#include "clay.h"
+```
+
+See `examples/clay_test.c`.
+
 ### clay.h + termbox2.h + clay_term.h
 
 [Clay](https://github.com/nicbarker/clay) handles layout; [termbox2](https://github.com/termbox/termbox2) is the terminal I/O layer Clay's official TUI backend uses; **clay_term.h** renders `Clay_RenderCommandArray` to the terminal.
@@ -39,14 +52,44 @@ Clay_Term_Shutdown();
 
 ANSI-only backend (no termbox2): `#define CLAY_TERM_IMPLEMENTATION` without `CLAY_TERM_TERMBOX`, then `Clay_Term_Render(cmds, cols, rows, columnWidth)`.
 
-See `examples/clay_term_demo.c`.
+See `examples/clay_term_test.c`.
 
-[Clay](https://github.com/nicbarker/clay) — flexbox-style 2D UI layout in C. Renderer-agnostic; outputs layout primitives for your draw code.
+### clay.h + clay_raylib.h
+
+[Clay](https://github.com/nicbarker/clay) layout with a [raylib](https://www.raylib.com/) renderer (ported from Clay's official raylib backend). Requires system raylib — link `-lraylib` (or `pkg-config --libs raylib`).
 
 ```c
 #define CLAY_IMPLEMENTATION
+#define CLAY_RAYLIB_IMPLEMENTATION
+#include "raylib.h"
+#include "raymath.h"
 #include "clay.h"
+#include "clay_raylib.h"
+
+Clay_Raylib_Initialize(800, 450, "app", 0);
+Clay_SetMeasureTextFunction(Clay_Raylib_MeasureText, fonts);
+Clay_Raylib_Render(Clay_EndLayout(0), fonts);
+Clay_Raylib_Close();
 ```
+
+See `examples/clay_raylib_test.c`.
+
+### termbox2.h
+
+[termbox2](https://github.com/termbox/termbox2) terminal I/O (vendored). Used by `clay_term.h` when `CLAY_TERM_TERMBOX` is defined.
+
+```c
+#define TB_OPT_ATTR_W 32
+#define TB_IMPL
+#include "termbox2.h"
+
+tb_init();
+tb_set_cell(0, 0, 'A', TB_WHITE, TB_BLACK);
+tb_present();
+tb_shutdown();
+```
+
+See `examples/termbox_test.c` (skips when stdout is not a TTY).
 
 ### stb_ds.h
 
@@ -61,25 +104,35 @@ arrpush(items, 42);
 arrfree(items);
 ```
 
-### test.h
+See `examples/stb_ds_test.c`.
 
-Minimal test harness for examples. Single header, explicit test list, no external deps.
+### munit.h
+
+[µnit](https://github.com/nemequ/munit) by Evan Nemerson — vendored STB-style unit test framework.
 
 ```c
-#define TEST_IMPLEMENTATION
-#include "test.h"
+#define MUNIT_IMPLEMENTATION
+#include "munit.h"
 
-TEST(sanity) {
-    ASSERT(1 + 1 == 2);
+static MunitResult test_example(const MunitParameter params[], void *data) {
+    (void) params; (void) data;
+    munit_assert_int(1 + 1, ==, 2);
+    return MUNIT_OK;
 }
 
-int main(void) {
-    const test_case cases[] = { TEST_ENTRY(sanity) };
-    return test_run(cases, 1);
+static MunitTest tests[] = {
+    { "/example", test_example, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { NULL, NULL, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+};
+
+static const MunitSuite suite = { "/", tests, NULL, 1, MUNIT_SUITE_OPTION_NONE };
+
+int main(int argc, char *argv[]) {
+    return munit_suite_main(&suite, NULL, argc, argv);
 }
 ```
 
-See `examples/test_smoke.c` and `examples/http_test.c`.
+See `examples/test_smoke.c`.
 
 ### http.h
 
@@ -94,12 +147,6 @@ HTTPS uses system OpenSSL (`libssl`/`libcrypto`) — no bundled TLS library. Lin
 http_t *h = http_get("https://example.com/", NULL);
 while (http_process(h) == HTTP_STATUS_PENDING) { }
 http_release(h);
-```
-
-```makefile
-# examples/Makefile
-CFLAGS += -Ipath/to/stb
-LDFLAGS += -lssl -lcrypto
 ```
 
 See `examples/http_test.c` — local test server covers GET/POST, headers, chunks, and SSE. Set `HTTP_TEST_NETWORK=1` to also run external HTTPS checks.
@@ -139,9 +186,7 @@ while (http_process(h) == HTTP_STATUS_PENDING) { }
 #include "minicoro.h"
 
 static void task(mco_coro *co) {
-    printf("hello\n");
     mco_yield(co);
-    printf("again\n");
 }
 
 mco_coro *co;
@@ -149,6 +194,28 @@ mco_create(&co, mco_desc_init(task, 0));
 mco_resume(co);
 mco_resume(co);
 mco_destroy(co);
+```
+
+See `examples/minicoro_test.c`.
+
+## Tests
+
+Every library has a matching test in `examples/`:
+
+| Library | Test |
+|---------|------|
+| `munit.h` | `test_smoke.c` |
+| `json.h` | `json_test.c` |
+| `stb_ds.h` | `stb_ds_test.c` |
+| `minicoro.h` | `minicoro_test.c` |
+| `clay.h` | `clay_test.c` |
+| `termbox2.h` | `termbox_test.c` |
+| `http.h` | `http_test.c` |
+| `clay_term.h` | `clay_term_test.c` |
+| `clay_raylib.h` | `clay_raylib_test.c` |
+
+```makefile
+cd examples && make test
 ```
 
 ## Usage
@@ -177,7 +244,8 @@ vendor/stb/json.h:
 | `clay.h` | zlib, Copyright (c) Nic Barker |
 | `termbox2.h` | MIT, Adam Saponara / nsf |
 | `clay_term.h` | MIT; terminal renderers derived from Clay |
+| `clay_raylib.h` | zlib/libpng; raylib renderer derived from Clay |
 | `stb_ds.h` | Public domain, Sean Barrett |
-| `test.h` | MIT |
+| `munit.h` | MIT, Evan Nemerson (vendored from µnit) |
 | `http.h` | MIT; HTTP poll model derived from http.h (Mattias Gustavsson) |
 | `minicoro.h` | MIT, Eduardo Bart |
