@@ -1,4 +1,3 @@
-#define MUNIT_NO_FORK
 #define CLAY_IMPLEMENTATION
 #define CLAY_RAYLIB_IMPLEMENTATION
 #include "../clay.h"
@@ -10,12 +9,45 @@
 #include <stdlib.h>
 #include <string.h>
 
-static Clay_Arena g_arena;
-static Font g_font;
-static int g_raylib_ready;
+typedef struct {
+    Clay_Arena arena;
+    Font font;
+} clay_fixture;
 
 static void on_clay_error(Clay_ErrorData err) {
     (void)err;
+}
+
+static Clay_Dimensions measure_stub(Clay_StringSlice text, Clay_TextElementConfig *config, void *userData) {
+    Clay_Dimensions size = {0};
+    float cell = *(float *)userData;
+    (void)config;
+    size.width = (float)text.length * cell;
+    size.height = cell;
+    return size;
+}
+
+static void *clay_setup(const MunitParameter params[], void *user_data) {
+    clay_fixture *f;
+    Clay_Dimensions dims = {640, 480};
+    uint64_t mem_size;
+    static float measure_cell = 8.0f;
+
+    (void)params;
+    (void)user_data;
+
+    f = (clay_fixture *)munit_malloc(sizeof *f);
+    mem_size = Clay_MinMemorySize();
+    f->arena = Clay_CreateArenaWithCapacityAndMemory(mem_size, malloc((size_t)mem_size));
+    Clay_Initialize(f->arena, dims, (Clay_ErrorHandler){ .errorHandlerFunction = on_clay_error });
+    Clay_SetMeasureTextFunction(measure_stub, &measure_cell);
+    return f;
+}
+
+static void clay_tear_down(void *fixture) {
+    clay_fixture *f = fixture;
+    free(f->arena.memory);
+    free(f);
 }
 
 static Clay_RenderCommandArray build_ui(void) {
@@ -49,28 +81,41 @@ static int has_display(void) {
     return getenv("DISPLAY") != NULL || getenv("WAYLAND_DISPLAY") != NULL;
 }
 
-static MunitResult test_measure_text(const MunitParameter params[], void *user_data) {
+static int raylib_test_begin(clay_fixture *f) {
+    if (!has_display()) return 0;
+    Clay_Raylib_Initialize(640, 480, "clay_raylib test", FLAG_WINDOW_HIDDEN);
+    f->font = GetFontDefault();
+    Clay_SetMeasureTextFunction(Clay_Raylib_MeasureText, &f->font);
+    return 1;
+}
+
+static void raylib_test_end(void) {
+    Clay_Raylib_Close();
+}
+
+static MunitResult test_measure_text(const MunitParameter params[], void *fixture) {
+    clay_fixture *f = fixture;
     Clay_TextElementConfig cfg = { .fontSize = 32 };
     static const char label[] = "Clay raylib test";
     Clay_StringSlice text = { .length = (int32_t)(sizeof label - 1), .chars = label, .baseChars = label };
     Clay_Dimensions dims;
 
-    (void) params;
-    (void) user_data;
+    (void)params;
 
-    if (!g_raylib_ready) return MUNIT_SKIP;
+    if (!raylib_test_begin(f)) return MUNIT_SKIP;
 
-    dims = Clay_Raylib_MeasureText(text, &cfg, &g_font);
+    dims = Clay_Raylib_MeasureText(text, &cfg, &f->font);
     munit_assert_true(dims.width > 0);
     munit_assert_true(dims.height > 0);
+    raylib_test_end();
     return MUNIT_OK;
 }
 
-static MunitResult test_layout_commands(const MunitParameter params[], void *user_data) {
+static MunitResult test_layout_commands(const MunitParameter params[], void *fixture) {
     Clay_RenderCommandArray cmds = build_ui();
 
-    (void) params;
-    (void) user_data;
+    (void)params;
+    (void)fixture;
 
     munit_assert_true(cmds.length > 0);
     munit_assert_true(count_commands(cmds, CLAY_RENDER_COMMAND_TYPE_TEXT) >= 1);
@@ -78,53 +123,35 @@ static MunitResult test_layout_commands(const MunitParameter params[], void *use
     return MUNIT_OK;
 }
 
-static MunitResult test_render_frame(const MunitParameter params[], void *user_data) {
+static MunitResult test_render_frame(const MunitParameter params[], void *fixture) {
+    clay_fixture *f = fixture;
     Clay_RenderCommandArray cmds;
     Font fonts[1];
 
-    (void) params;
-    (void) user_data;
+    (void)params;
 
-    if (!g_raylib_ready) return MUNIT_SKIP;
+    if (!raylib_test_begin(f)) return MUNIT_SKIP;
 
-    fonts[0] = g_font;
+    fonts[0] = f->font;
     BeginDrawing();
     ClearBackground((Color){20, 20, 28, 255});
     cmds = build_ui();
     Clay_Raylib_Render(cmds, fonts);
     EndDrawing();
     munit_assert_true(IsWindowReady());
+    raylib_test_end();
     return MUNIT_OK;
 }
 
 static MunitTest tests[] = {
-    { "/measure_text", test_measure_text, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
-    { "/layout_commands", test_layout_commands, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
-    { "/render_frame", test_render_frame, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/measure_text", test_measure_text, clay_setup, clay_tear_down, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/layout_commands", test_layout_commands, clay_setup, clay_tear_down, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/render_frame", test_render_frame, clay_setup, clay_tear_down, MUNIT_TEST_OPTION_NONE, NULL },
     { NULL, NULL, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
 };
 
 static const MunitSuite suite = { (char *)"/clay_raylib", tests, NULL, 1, MUNIT_SUITE_OPTION_NONE };
 
 int main(int argc, char *argv[]) {
-    Clay_Dimensions dims = {640, 480};
-    uint64_t mem_size;
-    int rc;
-
-    mem_size = Clay_MinMemorySize();
-    g_arena = Clay_CreateArenaWithCapacityAndMemory(mem_size, malloc((size_t)mem_size));
-    Clay_Initialize(g_arena, dims, (Clay_ErrorHandler){ .errorHandlerFunction = on_clay_error });
-
-    if (has_display()) {
-        Clay_Raylib_Initialize(640, 480, "clay_raylib test", FLAG_WINDOW_HIDDEN);
-        g_font = GetFontDefault();
-        Clay_SetMeasureTextFunction(Clay_Raylib_MeasureText, &g_font);
-        g_raylib_ready = 1;
-    }
-
-    rc = munit_suite_main(&suite, NULL, argc, argv);
-
-    if (g_raylib_ready) Clay_Raylib_Close();
-    free(g_arena.memory);
-    return rc;
+    return munit_suite_main(&suite, NULL, argc, argv);
 }

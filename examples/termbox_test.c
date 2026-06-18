@@ -1,4 +1,3 @@
-#define MUNIT_NO_FORK
 #define _DEFAULT_SOURCE
 #define TB_OPT_ATTR_W 32
 #define TB_IMPL

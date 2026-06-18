@@ -1,4 +1,3 @@
-#define MUNIT_NO_FORK
 #define _DEFAULT_SOURCE
 #define HTTP_IMPLEMENTATION
 #include "../http.h"

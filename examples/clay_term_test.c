@@ -11,11 +11,38 @@
 #include <string.h>
 #include <unistd.h>
 
-static Clay_Arena g_arena;
-static int g_col = 8;
+typedef struct {
+    Clay_Arena arena;
+    int measure_cell;
+} clay_fixture;
+
+static clay_fixture *g_capture_fixture;
 
 static void on_clay_error(Clay_ErrorData err) {
     (void)err;
+}
+
+static void *clay_setup(const MunitParameter params[], void *user_data) {
+    clay_fixture *f;
+    Clay_Dimensions dims = {720, 480};
+    uint64_t mem_size;
+
+    (void)params;
+    (void)user_data;
+
+    f = (clay_fixture *)munit_malloc(sizeof *f);
+    f->measure_cell = 8;
+    mem_size = Clay_MinMemorySize();
+    f->arena = Clay_CreateArenaWithCapacityAndMemory(mem_size, malloc((size_t)mem_size));
+    Clay_Initialize(f->arena, dims, (Clay_ErrorHandler){ .errorHandlerFunction = on_clay_error });
+    Clay_SetMeasureTextFunction(Clay_Term_MeasureText, &f->measure_cell);
+    return f;
+}
+
+static void clay_tear_down(void *fixture) {
+    clay_fixture *f = fixture;
+    free(f->arena.memory);
+    free(f);
 }
 
 static Clay_RenderCommandArray build_ui(void) {
@@ -74,9 +101,13 @@ static int capture_stdout(char *buf, size_t cap, void (*fn)(void)) {
     return 0;
 }
 
-static void render_ui(void) {
+static void render_ui(clay_fixture *f) {
     Clay_RenderCommandArray cmds = build_ui();
-    Clay_Term_Render(cmds, 80, 24, g_col);
+    Clay_Term_Render(cmds, 80, 24, f->measure_cell);
+}
+
+static void render_ui_capture(void) {
+    render_ui(g_capture_fixture);
 }
 
 static MunitResult test_measure_text(const MunitParameter params[], void *user_data) {
@@ -84,21 +115,22 @@ static MunitResult test_measure_text(const MunitParameter params[], void *user_d
     static const char hello[] = "hello";
     Clay_StringSlice text = { .length = 5, .chars = hello, .baseChars = hello };
     Clay_Dimensions dims;
+    int cell = 8;
 
-    (void) params;
-    (void) user_data;
+    (void)params;
+    (void)user_data;
 
-    dims = Clay_Term_MeasureText(text, &cfg, &g_col);
+    dims = Clay_Term_MeasureText(text, &cfg, &cell);
     munit_assert_true(dims.width > 0);
     munit_assert_true(dims.height > 0);
     return MUNIT_OK;
 }
 
-static MunitResult test_layout_commands(const MunitParameter params[], void *user_data) {
+static MunitResult test_layout_commands(const MunitParameter params[], void *fixture) {
     Clay_RenderCommandArray cmds = build_ui();
 
-    (void) params;
-    (void) user_data;
+    (void)params;
+    (void)fixture;
 
     munit_assert_true(cmds.length > 0);
     munit_assert_true(count_commands(cmds, CLAY_RENDER_COMMAND_TYPE_TEXT) >= 2);
@@ -106,37 +138,26 @@ static MunitResult test_layout_commands(const MunitParameter params[], void *use
     return MUNIT_OK;
 }
 
-static MunitResult test_ansi_render(const MunitParameter params[], void *user_data) {
+static MunitResult test_ansi_render(const MunitParameter params[], void *fixture) {
     char out[4096];
 
-    (void) params;
-    (void) user_data;
+    (void)params;
 
-    munit_assert_int(capture_stdout(out, sizeof out, render_ui), ==, 0);
+    g_capture_fixture = fixture;
+    munit_assert_int(capture_stdout(out, sizeof out, render_ui_capture), ==, 0);
     munit_assert_not_null(strstr(out, "\033["));
     return MUNIT_OK;
 }
 
 static MunitTest tests[] = {
     { "/measure_text", test_measure_text, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
-    { "/layout_commands", test_layout_commands, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
-    { "/ansi_render", test_ansi_render, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/layout_commands", test_layout_commands, clay_setup, clay_tear_down, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/ansi_render", test_ansi_render, clay_setup, clay_tear_down, MUNIT_TEST_OPTION_NONE, NULL },
     { NULL, NULL, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
 };
 
 static const MunitSuite suite = { (char *)"/clay_term", tests, NULL, 1, MUNIT_SUITE_OPTION_NONE };
 
 int main(int argc, char *argv[]) {
-    Clay_Dimensions dims = {720, 480};
-    uint64_t mem_size;
-    int rc;
-
-    mem_size = Clay_MinMemorySize();
-    g_arena = Clay_CreateArenaWithCapacityAndMemory(mem_size, malloc((size_t)mem_size));
-    Clay_Initialize(g_arena, dims, (Clay_ErrorHandler){ .errorHandlerFunction = on_clay_error });
-    Clay_SetMeasureTextFunction(Clay_Term_MeasureText, &g_col);
-
-    rc = munit_suite_main(&suite, NULL, argc, argv);
-    free(g_arena.memory);
-    return rc;
+    return munit_suite_main(&suite, NULL, argc, argv);
 }
