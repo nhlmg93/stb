@@ -51,6 +51,27 @@ while (http_process(req) == HTTP_STATUS_PENDING) { }
 http_release(req);
 ```
 
+### minicoro.h
+
+[minicoro](https://github.com/edubart/minicoro) by Eduardo Bart — stackful green threads (asymmetric coroutines). Lua-style yield/resume; not a parallel scheduler.
+
+```c
+#define MINICORO_IMPL
+#include "minicoro.h"
+
+static void task(mco_coro *co) {
+    printf("hello\n");
+    mco_yield(co);
+    printf("again\n");
+}
+
+mco_coro *co;
+mco_create(&co, mco_desc_init(task, 0));
+mco_resume(co);
+mco_resume(co);
+mco_destroy(co);
+```
+
 ## Usage
 
 Add this repo to your include path and include headers directly:
@@ -77,3 +98,4 @@ vendor/stb_me/json.h:
 | `clay.h` | zlib, Copyright (c) Nic Barker |
 | `stb_ds.h` | Public domain, Sean Barrett |
 | `http.h` | Public domain, Mattias Gustavsson |
+| `minicoro.h` | MIT, Eduardo Bart |
