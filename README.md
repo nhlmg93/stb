@@ -6,7 +6,7 @@ Single-header, stb-style C libraries — drop in a `.h`, define `*_IMPLEMENTATIO
 
 ### json.h
 
-Fork of [Neil Henning's json.h](https://github.com/sheredom/json.h) with traditional stb-style `JSON_IMPLEMENTATION` guards (no weak linkage). Deprecated parse flags removed.
+Based on [json.h by Neil Henning](https://github.com/sheredom/json.h) with stb-style `JSON_IMPLEMENTATION` guards.
 
 ```c
 #define JSON_IMPLEMENTATION

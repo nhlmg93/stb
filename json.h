@@ -1,6 +1,6 @@
 /*
- * json.h — stb_me (fork of Neil Henning's json.h)
- * https://github.com/sheredom/json.h
+ * json.h — stb_me
+ * Based on json.h by Neil Henning — https://github.com/sheredom/json.h
  *
  * stb-style usage:
  *   #define JSON_IMPLEMENTATION
