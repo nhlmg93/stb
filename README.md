@@ -72,18 +72,21 @@ mco_resume(co);
 mco_destroy(co);
 ```
 
-### termbox2.h
+### tuibox.h
 
-[termbox2](https://github.com/termbox/termbox2) — terminal I/O for TUIs. Slim ncurses alternative; cells, colors, keyboard/mouse events.
+[tuibox](https://github.com/Cubified/tuibox) by Cubified — mouse-driven terminal UI. Boxes, text, keyboard/hover/click events; no ncurses.
 
 ```c
-#define TB_IMPL
-#include "termbox2.h"
+#include "tuibox.h"
 
-tb_init();
-tb_printf(0, 0, TB_GREEN, 0, "hello");
-tb_present();
-tb_shutdown();
+ui_t u;
+ui_new(0, &u);
+ui_text(UI_CENTER_X, UI_CENTER_Y, "hello world!", 0, NULL, NULL, &u);
+ui_draw(&u);
+ui_loop(&u) {
+    ui_update(&u);
+}
+ui_free(&u);
 ```
 
 ## Usage
@@ -113,4 +116,4 @@ vendor/stb/json.h:
 | `stb_ds.h` | Public domain, Sean Barrett |
 | `http.h` | Public domain, Mattias Gustavsson |
 | `minicoro.h` | MIT, Eduardo Bart |
-| `termbox2.h` | MIT, Adam Saponara / nsf |
+| `tuibox.h` | MIT (includes rxi vec.h) |
