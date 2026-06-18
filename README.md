@@ -16,18 +16,42 @@ struct json_value_s *root = json_parse(text, size);
 free(root);
 ```
 
+### clay.h
+
+[Clay](https://github.com/nicbarker/clay) — flexbox-style 2D UI layout in C. Renderer-agnostic; outputs layout primitives for your draw code.
+
+```c
+#define CLAY_IMPLEMENTATION
+#include "clay.h"
+
+Clay_BeginLayout(layoutDimensions);
+CLAY({ .id = CLAY_ID("Root"), .layout = { .sizing = { .width = CLAY_SIZING_GROW(), .height = CLAY_SIZING_GROW() } } }) {
+    CLAY_TEXT(CLAY_STRING("Hello"), CLAY_TEXT_CONFIG({ .textColor = { 255, 255, 255, 255 } }));
+}
+Clay_EndLayout();
+```
+
 ## Usage
 
-Add this repo to your include path (or vendor it as a submodule) and include headers directly:
-
-```bash
-git submodule add https://github.com/nhlmg93/stb_me.git vendor/stb_me
-```
+Add this repo to your include path and include headers directly:
 
 ```makefile
 CFLAGS += -Ivendor/stb_me
 ```
 
+Or fetch headers at build time:
+
+```makefile
+STB_ME = https://raw.githubusercontent.com/nhlmg93/stb_me/master
+
+vendor/stb_me/json.h:
+	mkdir -p vendor/stb_me
+	curl -fsSL $(STB_ME)/json.h -o $@
+```
+
 ## License
 
-`json.h` is in the public domain (Unlicense), inherited from the upstream project.
+| File | License |
+|------|---------|
+| `json.h` | Public domain (Unlicense), from upstream |
+| `clay.h` | zlib, Copyright (c) Nic Barker |
