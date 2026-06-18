@@ -2,7 +2,7 @@ CC = gcc
 CFLAGS = -Wall -Wextra -std=gnu11 -I..
 LDFLAGS = -lssl -lcrypto
 
-TESTS = test_smoke json_test stb_ds_test minicoro_test clay_test termbox_test http_test clay_term_test clay_raylib_test
+TESTS = test_smoke json_test stb_ds_test minicoro_test arena_test clay_test termbox_test http_test clay_term_test clay_raylib_test
 
 test_smoke: test_smoke.c ../munit.h
 	$(CC) $(CFLAGS) -o $@ test_smoke.c
@@ -15,6 +15,9 @@ stb_ds_test: stb_ds_test.c ../stb_ds.h ../munit.h
 
 minicoro_test: minicoro_test.c ../minicoro.h ../munit.h
 	$(CC) $(CFLAGS) -o $@ minicoro_test.c
+
+arena_test: arena_test.c ../arena.h ../munit.h
+	$(CC) $(CFLAGS) -o $@ arena_test.c
 
 clay_test: clay_test.c ../clay.h ../munit.h
 	$(CC) $(CFLAGS) -o $@ clay_test.c

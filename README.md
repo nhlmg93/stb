@@ -91,6 +91,23 @@ tb_shutdown();
 
 See `examples/termbox_test.c` (skips when stdout is not a TTY).
 
+### arena.h
+
+Bump-pointer arena allocator — fast linear allocations with O(1) reset. Ported from the arena in the game-1 project.
+
+```c
+#define ARENA_IMPLEMENTATION
+#include "arena.h"
+
+Arena arena = arena_create(4096);
+int *n = arena_alloc(&arena, sizeof *n);
+char *s = arena_strdup(&arena, "hello");
+arena_reset(&arena);
+arena_destroy(&arena);
+```
+
+See `examples/arena_test.c`.
+
 ### stb_ds.h
 
 [stb_ds](https://github.com/nothings/stb/blob/master/stb_ds.h) by Sean Barrett — dynamic arrays and hash tables for C.
@@ -206,6 +223,7 @@ Every library has a matching test in `examples/`:
 |---------|------|
 | `munit.h` | `test_smoke.c` |
 | `json.h` | `json_test.c` |
+| `arena.h` | `arena_test.c` |
 | `stb_ds.h` | `stb_ds_test.c` |
 | `minicoro.h` | `minicoro_test.c` |
 | `clay.h` | `clay_test.c` |
@@ -245,6 +263,7 @@ vendor/stb/json.h:
 | `termbox2.h` | MIT, Adam Saponara / nsf |
 | `clay_term.h` | MIT; terminal renderers derived from Clay |
 | `clay_raylib.h` | zlib/libpng; raylib renderer derived from Clay |
+| `arena.h` | Public domain / MIT |
 | `stb_ds.h` | Public domain, Sean Barrett |
 | `munit.h` | MIT, Evan Nemerson (vendored from µnit) |
 | `http.h` | MIT; HTTP poll model derived from http.h (Mattias Gustavsson) |

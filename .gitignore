@@ -10,6 +10,7 @@ examples/test_smoke
 examples/json_test
 examples/stb_ds_test
 examples/minicoro_test
+examples/arena_test
 examples/clay_test
 examples/termbox_test
 examples/clay_term_test
