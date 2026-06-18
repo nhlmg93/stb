@@ -72,6 +72,20 @@ mco_resume(co);
 mco_destroy(co);
 ```
 
+### termbox2.h
+
+[termbox2](https://github.com/termbox/termbox2) — terminal I/O for TUIs. Slim ncurses alternative; cells, colors, keyboard/mouse events.
+
+```c
+#define TB_IMPL
+#include "termbox2.h"
+
+tb_init();
+tb_printf(0, 0, TB_GREEN, 0, "hello");
+tb_present();
+tb_shutdown();
+```
+
 ## Usage
 
 Add this repo to your include path and include headers directly:
@@ -99,3 +113,4 @@ vendor/stb/json.h:
 | `stb_ds.h` | Public domain, Sean Barrett |
 | `http.h` | Public domain, Mattias Gustavsson |
 | `minicoro.h` | MIT, Eduardo Bart |
+| `termbox2.h` | MIT, Adam Saponara / nsf |
